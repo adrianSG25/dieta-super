@@ -3,7 +3,7 @@ import { makeSeedProduct } from "../seed-helpers";
 
 export const PANTRY_BAKERY_DRINKS_PRODUCTS: ComparedProduct[] = [
   // ==========================================
-  // Despensa y Cereales (28 productos)
+  // Despensa y Cereales (30 productos)
   // ==========================================
   makeSeedProduct({
     id: "pbd-porridge-oats-1kg",
@@ -314,6 +314,29 @@ export const PANTRY_BAKERY_DRINKS_PRODUCTS: ComparedProduct[] = [
     lidl: ["Deluxe 100% Roasted Almond Butter 170g", 1.99],
     asda: ["ASDA 100% Pure Smooth Almond Butter 170g", 2.35],
     morrisons: ["Morrisons Pure Almond Butter 170g", 2.25],
+  }),
+  makeSeedProduct({
+    id: "pbd-pesto-green-190g",
+    canonicalName: "Salsa Pesto Verde Genovese (190g)",
+    category: "Despensa y Cereales",
+    weightGrams: 190,
+    nutrition: [415, 4.8, 5.5, 41.0, 1.5],
+    aldi: ["Cucina Green Pesto 190g", 0.99],
+    lidl: ["Baresa Green Pesto Alla Genovese 190g", 0.99],
+    asda: ["ASDA Classic Green Pesto 190g", 1.15],
+    morrisons: ["Morrisons Green Pesto 190g", 1.15],
+  }),
+  makeSeedProduct({
+    id: "pbd-soy-sauce-150ml",
+    canonicalName: "Salsa de Soja Ligera (150ml)",
+    category: "Despensa y Cereales",
+    unitLabel: "L",
+    weightGrams: 150,
+    nutrition: [53, 8.1, 4.9, 0.1, 0.0],
+    aldi: ["Asia Specialities Light Soy Sauce 150ml", 0.65],
+    lidl: ["Vitasia Light Soy Sauce 150ml", 0.65],
+    asda: ["ASDA Light Soy Sauce 150ml", 0.80],
+    morrisons: ["Morrisons Light Soy Sauce 150ml", 0.80],
   }),
 
   // ==========================================

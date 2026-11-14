@@ -97,6 +97,9 @@ const BILINGUAL_ALIASES: Record<string, string[]> = {
   zanahorias: ["carrots"],
   cebolla: ["onions", "onion"],
   cebollas: ["onions", "onion"],
+  ajo: ["garlic"],
+  ajos: ["garlic", "ajo"],
+  esparragos: ["asparagus"],
   garbanzos: ["chickpeas"],
   lentejas: ["lentils"],
   alubias: ["beans", "kidney", "black beans"],
@@ -110,6 +113,8 @@ const BILINGUAL_ALIASES: Record<string, string[]> = {
   batido: ["shake", "protein"],
   congelado: ["frozen"],
   congelados: ["frozen"],
+  pesto: ["pesto", "genovese"],
+  soja: ["soy", "soya", "soy sauce"],
   proteina: ["protein", "proteico", "skyr", "yogurt", "chicken", "turkey", "kvarg"],
   chicken: ["pollo", "pechuga"],
   turkey: ["pavo"],
@@ -129,6 +134,9 @@ const BILINGUAL_ALIASES: Record<string, string[]> = {
   spinach: ["espinacas"],
   coffee: ["cafe"],
   frozen: ["congelados", "congelado"],
+  garlic: ["ajo", "ajos"],
+  asparagus: ["esparragos"],
+  soy: ["soja", "soya", "soy sauce"],
 };
 
 export function expandQueryTerms(query: string): string[] {

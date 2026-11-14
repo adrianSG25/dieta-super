@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Cloud, Radio, ShoppingCart, Search, HeartPulse, Users } from "lucide-react";
+import { Cloud, Radio, ShoppingCart, Search, HeartPulse, Users, UtensilsCrossed } from "lucide-react";
 import type {
   ComparedProduct,
   CoupleGoals,
@@ -23,9 +23,10 @@ import {
 import ProductComparator from "@/components/ProductComparator";
 import SharedShoppingList from "@/components/SharedShoppingList";
 import CoupleNutritionPanel from "@/components/CoupleNutritionPanel";
+import RecipesAndBudgetPlanner from "@/components/RecipesAndBudgetPlanner";
 import { formatGbp } from "@/components/SupermarketBadge";
 
-type Tab = "compare" | "list" | "diet";
+type Tab = "compare" | "recipes" | "list" | "diet";
 
 function newId(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -103,17 +104,53 @@ export default function HomePage() {
   );
 
   const addProduct = useCallback(
-    (product: ComparedProduct) => {
+    (product: ComparedProduct, quantity = 1) => {
       const by = roleRef.current;
+      const qtyToAdd = Math.max(1, quantity);
       updateList((l) => {
         const existing = l.find((i) => i.productId === product.id && i.addedBy === by && !i.checked);
         if (existing) {
-          return l.map((i) => (i.id === existing.id ? { ...i, quantity: i.quantity + 1 } : i));
+          return l.map((i) => (i.id === existing.id ? { ...i, quantity: i.quantity + qtyToAdd } : i));
         }
         return [
           ...l,
-          { id: newId(), productId: product.id, product, quantity: 1, addedBy: by, checked: false },
+          { id: newId(), productId: product.id, product, quantity: qtyToAdd, addedBy: by, checked: false },
         ];
+      });
+    },
+    [updateList],
+  );
+
+  const addProductsBatch = useCallback(
+    (entries: { product: ComparedProduct; quantity: number }[]) => {
+      if (!entries.length) return;
+      const by = roleRef.current;
+      updateList((l) => {
+        const next = [...l];
+        for (const entry of entries) {
+          const { product, quantity } = entry;
+          if (quantity <= 0) continue;
+          const existingIndex = next.findIndex(
+            (i) => i.productId === product.id && i.addedBy === by && !i.checked,
+          );
+          if (existingIndex >= 0) {
+            const existing = next[existingIndex];
+            next[existingIndex] = {
+              ...existing,
+              quantity: existing.quantity + quantity,
+            };
+          } else {
+            next.push({
+              id: newId(),
+              productId: product.id,
+              product,
+              quantity,
+              addedBy: by,
+              checked: false,
+            });
+          }
+        }
+        return next;
       });
     },
     [updateList],
@@ -144,6 +181,7 @@ export default function HomePage() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "compare", label: "Comparar", icon: <Search className="h-5 w-5" /> },
+    { id: "recipes", label: "Recetas & £50", icon: <UtensilsCrossed className="h-5 w-5" /> },
     { id: "list", label: `Lista (${list.length})`, icon: <ShoppingCart className="h-5 w-5" /> },
     { id: "diet", label: "Dieta & Ahorro", icon: <HeartPulse className="h-5 w-5" /> },
   ];
@@ -235,6 +273,15 @@ export default function HomePage() {
             quantities={quantities}
           />
         )}
+        {tab === "recipes" && (
+          <RecipesAndBudgetPlanner
+            activeName={activeName}
+            goals={goals}
+            quantities={quantities}
+            onAddProduct={addProduct}
+            onAddBatch={addProductsBatch}
+          />
+        )}
         {tab === "list" && (
           <SharedShoppingList
             items={list}
@@ -264,7 +311,7 @@ export default function HomePage() {
       </main>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-slate-200 bg-white/95 backdrop-blur md:hidden [padding-bottom:env(safe-area-inset-bottom)]"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-slate-200 bg-white/95 backdrop-blur md:hidden [padding-bottom:env(safe-area-inset-bottom)]"
         aria-label="Secciones"
       >
         {tabs.map((t) => (
@@ -273,12 +320,12 @@ export default function HomePage() {
             type="button"
             onClick={() => setTab(t.id)}
             aria-current={tab === t.id ? "page" : undefined}
-            className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium ${
-              tab === t.id ? "text-emerald-600" : "text-slate-500"
+            className={`flex flex-col items-center justify-center gap-0.5 px-0.5 py-2 text-[10px] font-medium leading-tight ${
+              tab === t.id ? "text-emerald-600 font-bold" : "text-slate-500"
             }`}
           >
             {t.icon}
-            {t.label}
+            <span className="truncate max-w-full text-center">{t.label}</span>
           </button>
         ))}
       </nav>

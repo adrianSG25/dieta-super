@@ -3,7 +3,7 @@ import { makeSeedProduct } from "../seed-helpers";
 
 export const FRUITS_AND_VEG_PRODUCTS: ComparedProduct[] = [
   // ==========================================
-  // FRUTAS Y VERDURAS (38 productos frescos)
+  // FRUTAS Y VERDURAS (42 productos frescos)
   // ==========================================
   makeSeedProduct({
     id: "fv-bananas-5pack",
@@ -422,6 +422,50 @@ export const FRUITS_AND_VEG_PRODUCTS: ComparedProduct[] = [
     lidl: ["Oaklands Closed Cup Mushrooms 300g", 0.99],
     asda: ["ASDA Closed Cup Mushrooms 300g", 1.1],
     morrisons: ["Morrisons Closed Cup Mushrooms 300g", 1.15],
+  }),
+  makeSeedProduct({
+    id: "fv-sweet-potatoes-1kg",
+    canonicalName: "Boniatos / Sweet Potatoes (1kg)",
+    category: "Frutas y Verduras",
+    weightGrams: 1000,
+    nutrition: [86, 1.6, 20.1, 0.1, 3.0],
+    aldi: ["Nature's Pick Sweet Potatoes 1kg", 1.19],
+    lidl: ["Oaklands Sweet Potatoes 1kg", 1.19],
+    asda: ["ASDA Sweet Potatoes 1kg", 1.35],
+    morrisons: ["Morrisons Sweet Potatoes 1kg", 1.40],
+  }),
+  makeSeedProduct({
+    id: "fv-baking-potatoes-4pack",
+    canonicalName: "Patatas grandes para asar / hervir (4 uds / 1kg)",
+    category: "Frutas y Verduras",
+    weightGrams: 1000,
+    nutrition: [77, 2.0, 17.5, 0.1, 2.2],
+    aldi: ["Nature's Pick British Baking Potatoes 4 Pack", 0.79],
+    lidl: ["Oaklands British Baking Potatoes 4 Pack", 0.79],
+    asda: ["ASDA British Baking Potatoes 4 Pack", 0.90],
+    morrisons: ["Morrisons British Baking Potatoes 4 Pack", 0.95],
+  }),
+  makeSeedProduct({
+    id: "fv-garlic-bulbs-4pack",
+    canonicalName: "Ajos frescos (malla 4 cabezas / 200g)",
+    category: "Frutas y Verduras",
+    weightGrams: 200,
+    nutrition: [149, 6.4, 33.1, 0.5, 2.1],
+    aldi: ["Nature's Pick Garlic 4 Pack", 0.95],
+    lidl: ["Oaklands Garlic Bulbs 4 Pack", 0.95],
+    asda: ["ASDA Garlic 4 Pack", 1.10],
+    morrisons: ["Morrisons Garlic 4 Pack", 1.15],
+  }),
+  makeSeedProduct({
+    id: "fv-asparagus-tips-250g",
+    canonicalName: "Espárragos verdes trigueros (manojo 250g)",
+    category: "Frutas y Verduras",
+    weightGrams: 250,
+    nutrition: [20, 2.2, 3.9, 0.1, 2.1],
+    aldi: ["Nature's Pick Asparagus Bundle 250g", 1.79],
+    lidl: ["Oaklands Green Asparagus 250g", 1.79],
+    asda: ["ASDA Tender Asparagus Bundle 250g", 2.00],
+    morrisons: ["Morrisons Asparagus Bundle 250g", 2.10],
   }),
 
   // ==========================================
