@@ -32,7 +32,10 @@ const LAST_ROOM_STORAGE_KEY = "dietasuper:last-room";
 const ROOM_STORAGE_PREFIX = "dietasuper:room:";
 const BROADCAST_PREFIX = "dietasuper-sync-";
 const SUPABASE_TABLE = "dietasuper_rooms";
-const SUPABASE_POLL_INTERVAL_MS = 5000;
+const SUPABASE_POLL_INTERVAL_MS = 3000;
+const PUBLIC_SUPABASE_URL = "https://xokdhfafotskrfkmhpmj.supabase.co";
+const PUBLIC_SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhva2RoZmFmb3Rza3Jma21ocG1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzODQwMTAsImV4cCI6MjEwMTk2MDAxMH0.gSonptbpVYO1uThfcrsx2MSVC4huOU5lVlXsTn1PzMU";
 
 const TAB_ID =
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -48,8 +51,11 @@ interface BroadcastPayload {
 }
 
 function getSupabaseConfig(): { url: string; anonKey: string } | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || PUBLIC_SUPABASE_URL;
+  const anonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+    PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
     return null;
   }
@@ -383,9 +389,29 @@ export function subscribeToState(
     };
 
     void syncRemote();
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        void syncRemote();
+      }
+    };
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
     pollTimer = setInterval(() => {
       void syncRemote();
     }, SUPABASE_POLL_INTERVAL_MS);
+
+    return () => {
+      disposed = true;
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      if (channel) {
+        channel.close();
+      }
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
+    };
   }
 
   return () => {
