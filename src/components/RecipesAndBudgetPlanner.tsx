@@ -13,7 +13,12 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import type { ComparedProduct, CoupleGoals } from "@/types/dietasuper";
+import type {
+  ComparedProduct,
+  CoupleGoals,
+  SupermarketId,
+} from "@/types/dietasuper";
+import { SUPERMARKET_IDS } from "@/types/dietasuper";
 import { getDefaultCatalog, getEnglishProductName } from "@/lib/supermarkets";
 import {
   BUDGET_PROFILE_INFOS,
@@ -22,16 +27,31 @@ import {
   computeRecipeMetrics,
   type BudgetProfileId,
   type RecipeCategory,
+  type RecipeShoppingMode,
   type WeeklyRecipe,
 } from "@/lib/recipes/weekly-recipes";
-import { SupermarketBadge, formatGbp } from "./SupermarketBadge";
+import {
+  SupermarketBadge,
+  formatGbp,
+  SUPERMARKET_META,
+} from "./SupermarketBadge";
 
 export interface RecipesAndBudgetPlannerProps {
   activeName: string;
   goals: CoupleGoals;
   quantities: Record<string, number>;
-  onAddProduct: (product: ComparedProduct, quantity?: number) => void;
-  onAddBatch: (entries: { product: ComparedProduct; quantity: number }[]) => void;
+  onAddProduct: (
+    product: ComparedProduct,
+    quantity?: number,
+    preferredSupermarket?: SupermarketId,
+  ) => void;
+  onAddBatch: (
+    entries: {
+      product: ComparedProduct;
+      quantity: number;
+      preferredSupermarket?: SupermarketId;
+    }[],
+  ) => void;
 }
 
 type SectionView = "all" | "budget" | "recipes";
@@ -56,9 +76,15 @@ export default function RecipesAndBudgetPlanner({
   const [sectionView, setSectionView] = useState<SectionView>("all");
   const [budgetGbp, setBudgetGbp] = useState<number>(50);
   const [profile, setProfile] = useState<BudgetProfileId>("balanced-couple");
+  const [preferredSupermarket, setPreferredSupermarket] = useState<
+    SupermarketId | "auto"
+  >("auto");
   const [recipeCategory, setRecipeCategory] = useState<RecipeCategory>("all");
   const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const shoppingMode: RecipeShoppingMode =
+    profile === "max-savings" ? "max-savings" : "single-supermarket";
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -77,14 +103,27 @@ export default function RecipesAndBudgetPlanner({
   // Zona A: Recomendación inteligente de presupuesto
   const budgetRec = useMemo(() => {
     const safeDailyCalories = goals.dailyCaloriesTargetTotal || 4200;
-    return buildBudgetRecommendation(budgetGbp, profile, catalog, safeDailyCalories);
-  }, [budgetGbp, profile, catalog, goals.dailyCaloriesTargetTotal]);
+    return buildBudgetRecommendation(
+      budgetGbp,
+      profile,
+      catalog,
+      safeDailyCalories,
+      preferredSupermarket,
+    );
+  }, [budgetGbp, profile, catalog, goals.dailyCaloriesTargetTotal, preferredSupermarket]);
 
   const missingBudgetEntries = useMemo(() => {
     return budgetRec.items
       .filter((item) => (quantities[item.product.id] ?? 0) === 0)
-      .map((item) => ({ product: item.product, quantity: item.quantity }));
-  }, [budgetRec.items, quantities]);
+      .map((item) => ({
+        product: item.product,
+        quantity: item.quantity,
+        preferredSupermarket:
+          budgetRec.mode === "single-supermarket"
+            ? item.cheapestSupermarket
+            : undefined,
+      }));
+  }, [budgetRec.items, budgetRec.mode, quantities]);
 
   const missingBudgetTotal = useMemo(() => {
     return budgetRec.items
@@ -102,6 +141,10 @@ export default function RecipesAndBudgetPlanner({
     const fullEntries = budgetRec.items.map((item) => ({
       product: item.product,
       quantity: item.quantity,
+      preferredSupermarket:
+        budgetRec.mode === "single-supermarket"
+          ? item.cheapestSupermarket
+          : undefined,
     }));
     if (fullEntries.length === 0) return;
     onAddBatch(fullEntries);
@@ -117,9 +160,12 @@ export default function RecipesAndBudgetPlanner({
   const recipesWithMetrics = useMemo(() => {
     return filteredRecipes.map((recipe) => ({
       recipe,
-      metrics: computeRecipeMetrics(recipe, catalogById),
+      metrics: computeRecipeMetrics(recipe, catalogById, {
+        mode: shoppingMode,
+        preferredSupermarket,
+      }),
     }));
-  }, [filteredRecipes, catalogById]);
+  }, [filteredRecipes, catalogById, shoppingMode, preferredSupermarket]);
 
   const toggleSteps = (recipeId: string) => {
     setExpandedSteps((prev) => ({
@@ -127,6 +173,102 @@ export default function RecipesAndBudgetPlanner({
       [recipeId]: !prev[recipeId],
     }));
   };
+
+  // Helper limpio y reutilizable para la barra selectora de modo de supermercado
+  const renderShoppingModeSelector = (contextLabel: string) => (
+    <div className="rounded-2xl border border-slate-200/90 bg-white/95 p-3 sm:p-4 shadow-xs space-y-2.5">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          Modo de compra {contextLabel ? `(${contextLabel})` : ""}:
+        </span>
+        <span className="text-[11px] text-slate-500">
+          {shoppingMode === "single-supermarket"
+            ? "1 solo viaje a tu súper favorito o al más barato"
+            : "Divide la lista entre varios súpers para rascar el máximo ahorro"}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (profile === "max-savings") {
+              setProfile("balanced-couple");
+            }
+          }}
+          className={`flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all ${
+            shoppingMode === "single-supermarket"
+              ? "bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-600"
+              : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          <span>🏪</span>
+          <span>Mismo supermercado (1 solo viaje)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setProfile("max-savings")}
+          className={`flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all ${
+            shoppingMode === "max-savings"
+              ? "bg-amber-600 text-white shadow-sm ring-1 ring-amber-600"
+              : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          <span>⚡</span>
+          <span>Ahorro Máximo (varios súpers)</span>
+        </button>
+      </div>
+
+      {shoppingMode === "single-supermarket" && (
+        <div className="pt-2 border-t border-slate-100">
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Supermercado único para tu compra:
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPreferredSupermarket("auto")}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-all ${
+                preferredSupermarket === "auto"
+                  ? "bg-slate-900 text-white shadow-xs ring-1 ring-slate-900"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              ✨ Automático (el más barato)
+            </button>
+            {SUPERMARKET_IDS.map((sid) => {
+              const meta = SUPERMARKET_META[sid];
+              const isSelected = preferredSupermarket === sid;
+              return (
+                <button
+                  key={sid}
+                  type="button"
+                  onClick={() => setPreferredSupermarket(sid)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-all ${
+                    isSelected
+                      ? "ring-2 ring-offset-1 shadow-xs"
+                      : "opacity-80 hover:opacity-100 border border-slate-200"
+                  }`}
+                  style={{
+                    backgroundColor: isSelected ? meta.bg : "#ffffff",
+                    color: isSelected ? meta.fg : "#1e293b",
+                    borderColor: isSelected ? meta.bg : undefined,
+                  }}
+                >
+                  <span
+                    className="inline-block h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: meta.accent }}
+                  />
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6 pb-6">
@@ -307,6 +449,11 @@ export default function RecipesAndBudgetPlanner({
             </div>
           </div>
 
+          {/* Barra selectora de modo de supermercado para Presupuesto */}
+          <div className="mt-4">
+            {renderShoppingModeSelector("Presupuesto")}
+          </div>
+
           {/* Tarjetas resumen de métricas del presupuesto */}
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-xs">
@@ -341,6 +488,60 @@ export default function RecipesAndBudgetPlanner({
               </p>
               <p className="text-[11px] text-slate-500">calorías conjuntas</p>
             </div>
+          </div>
+
+          {/* Insignia destacada de modo y desglose de plantilla base */}
+          <div className="mt-4 rounded-2xl border border-slate-200/90 bg-white p-3.5 sm:p-4 shadow-xs">
+            {budgetRec.mode === "single-supermarket" && budgetRec.recommendedSupermarket ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-800">🏪 Todo en</span>
+                  <SupermarketBadge id={budgetRec.recommendedSupermarket} size="sm" />
+                  {preferredSupermarket === "auto" && (
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                      Recomendado por disponibilidad y precio
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
+                  <span className="font-semibold text-slate-500">Plantilla base en cada súper:</span>
+                  {SUPERMARKET_IDS.map((sid) => {
+                    const cost = budgetRec.singleSupermarketTotals[sid];
+                    const isRec = sid === budgetRec.recommendedSupermarket;
+                    return (
+                      <span
+                        key={sid}
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] ${
+                          isRec
+                            ? "bg-emerald-50 font-bold text-emerald-800 ring-1 ring-emerald-200"
+                            : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        <span>{SUPERMARKET_META[sid].label}:</span>
+                        <span>{formatGbp(cost)}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700">
+                    ⚡
+                  </span>
+                  <span className="text-xs font-bold text-slate-900">
+                    ⚡ Modo Ahorro Máximo (combinando los súpers más baratos)
+                  </span>
+                </div>
+                {budgetRec.savingsVsAverageGbp > 0 && (
+                  <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                    Ahorro est. vs precio medio: {formatGbp(budgetRec.savingsVsAverageGbp)}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Botones de acción rápida en cabecera de resultados */}
@@ -452,7 +653,13 @@ export default function RecipesAndBudgetPlanner({
                     <button
                       type="button"
                       onClick={() => {
-                        onAddProduct(item.product, item.quantity);
+                        onAddProduct(
+                          item.product,
+                          item.quantity,
+                          budgetRec.mode === "single-supermarket"
+                            ? item.cheapestSupermarket
+                            : undefined,
+                        );
                         showToast(`✓ +${item.quantity} ${item.product.canonicalName} para ${activeName}`);
                       }}
                       className="flex items-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 active:scale-95 transition-all"
@@ -513,6 +720,11 @@ export default function RecipesAndBudgetPlanner({
             })}
           </div>
 
+          {/* Barra selectora de modo de supermercado para Recetas */}
+          <div>
+            {renderShoppingModeSelector("Recetas")}
+          </div>
+
           {/* Tarjetas de recetas */}
           <div className="space-y-4">
             {recipesWithMetrics.map(({ recipe, metrics }) => {
@@ -534,6 +746,10 @@ export default function RecipesAndBudgetPlanner({
                   const batch = missingIngs.map((r) => ({
                     product: r.product!,
                     quantity: r.ingredient.quantity,
+                    preferredSupermarket:
+                      metrics.mode === "single-supermarket"
+                        ? (r.cheapestSupermarket ?? undefined)
+                        : undefined,
                   }));
                   onAddBatch(batch);
                   showToast(`✓ Añadidos ${batch.length} ingredientes de "${recipe.title.slice(0, 22)}..." como ${activeName}`);
@@ -544,6 +760,10 @@ export default function RecipesAndBudgetPlanner({
                     .map((r) => ({
                       product: r.product!,
                       quantity: r.ingredient.quantity,
+                      preferredSupermarket:
+                        metrics.mode === "single-supermarket"
+                          ? (r.cheapestSupermarket ?? undefined)
+                          : undefined,
                     }));
                   onAddBatch(batch);
                   showToast(`✓ Añadido otro lote completo de la receta como ${activeName}`);
@@ -556,6 +776,10 @@ export default function RecipesAndBudgetPlanner({
                   .map((r) => ({
                     product: r.product!,
                     quantity: r.ingredient.quantity,
+                    preferredSupermarket:
+                      metrics.mode === "single-supermarket"
+                        ? (r.cheapestSupermarket ?? undefined)
+                        : undefined,
                   }));
                 onAddBatch(batch);
                 showToast(`✓ Añadidos todos los ingredientes de la receta como ${activeName}`);
@@ -603,6 +827,56 @@ export default function RecipesAndBudgetPlanner({
                         ))}
                       </div>
                     )}
+
+                    {/* Insignia destacada de modo y desglose de supermercados */}
+                    <div className="mt-3 pt-3 border-t border-slate-100">
+                      {metrics.mode === "single-supermarket" && metrics.recommendedSupermarket ? (
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold text-slate-800">🏪 Todo en</span>
+                            <SupermarketBadge id={metrics.recommendedSupermarket} size="sm" />
+                            {metrics.maxSavingsDiffGbp > 0.01 && (
+                              <button
+                                type="button"
+                                onClick={() => setProfile("max-savings")}
+                                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 transition-colors"
+                              >
+                                ⚡ En Ahorro Máximo ahorrarías {formatGbp(metrics.maxSavingsDiffGbp)} mezclando súpers
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
+                            <span className="font-semibold text-slate-500">Receta completa en:</span>
+                            {SUPERMARKET_IDS.map((sid) => {
+                              const cost = metrics.singleSupermarketCosts[sid];
+                              const isRec = sid === metrics.recommendedSupermarket;
+                              return (
+                                <span
+                                  key={sid}
+                                  className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] ${
+                                    isRec
+                                      ? "bg-emerald-50 font-bold text-emerald-800 ring-1 ring-emerald-200"
+                                      : "bg-slate-100 text-slate-700"
+                                  }`}
+                                >
+                                  <span>{SUPERMARKET_META[sid].label}:</span>
+                                  <span>{formatGbp(cost)}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+                            ⚡ Ahorro Máximo ({metrics.uniqueSupermarketsCount} súpers)
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            Ingredientes optimizados por el precio más bajo en cada súper
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Banda de Métricas Clave */}
@@ -754,7 +1028,13 @@ export default function RecipesAndBudgetPlanner({
                                 type="button"
                                 title={`Añadir ${r.ingredient.quantity} unidad(es)`}
                                 onClick={() => {
-                                  onAddProduct(r.product!, r.ingredient.quantity);
+                                  onAddProduct(
+                                    r.product!,
+                                    r.ingredient.quantity,
+                                    metrics.mode === "single-supermarket"
+                                      ? (r.cheapestSupermarket ?? undefined)
+                                      : undefined,
+                                  );
                                   showToast(`✓ +${r.ingredient.quantity} ${r.product!.canonicalName} para ${activeName}`);
                                 }}
                                 className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-emerald-600 hover:text-white active:scale-95 transition-all"

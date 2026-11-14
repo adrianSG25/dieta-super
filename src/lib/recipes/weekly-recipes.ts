@@ -1,6 +1,7 @@
 import type {
   ComparedProduct,
   SupermarketId,
+  SupermarketOffer,
 } from "@/types/dietasuper";
 import { SUPERMARKET_IDS } from "@/types/dietasuper";
 import { getEffectiveOfferPrice } from "@/lib/optimizer/basket";
@@ -43,6 +44,13 @@ export interface BudgetRecommendationItem {
   reason: string;
 }
 
+export type RecipeShoppingMode = "single-supermarket" | "max-savings";
+
+export interface ComputeRecipeMetricsOptions {
+  mode?: RecipeShoppingMode;
+  preferredSupermarket?: SupermarketId | "auto";
+}
+
 export interface BudgetRecommendationResult {
   targetBudgetGbp: number;
   totalCostGbp: number;
@@ -51,12 +59,17 @@ export interface BudgetRecommendationResult {
   totalProteinGrams: number;
   estimatedDaysCouple: number;
   items: BudgetRecommendationItem[];
+  mode: RecipeShoppingMode;
+  recommendedSupermarket: SupermarketId | null;
+  singleSupermarketTotals: Record<SupermarketId, number>;
+  savingsVsAverageGbp: number;
 }
 
 export interface RecipeResolvedIngredient {
   ingredient: WeeklyRecipeIngredient;
   product: ComparedProduct | null;
   cheapestSupermarket: SupermarketId | null;
+  supermarketId?: SupermarketId | null;
   unitPriceGbp: number;
   lineTotalGbp: number;
   totalGrams: number;
@@ -73,6 +86,12 @@ export interface RecipeMetricsResult {
   totalProteinGrams: number;
   proteinPerServing: number;
   resolvedIngredients: RecipeResolvedIngredient[];
+  mode: RecipeShoppingMode;
+  recommendedSupermarket: SupermarketId | null;
+  singleSupermarketCosts: Record<SupermarketId, number>;
+  splitSupermarketCostGbp: number;
+  maxSavingsDiffGbp: number;
+  uniqueSupermarketsCount: number;
 }
 
 export interface BudgetProfileInfo {
@@ -111,19 +130,70 @@ function round2(value: number): number {
   return rounded === 0 ? 0 : rounded;
 }
 
+export function getProductOfferBySupermarket(
+  product: ComparedProduct,
+  supermarketId: SupermarketId,
+): SupermarketOffer | null {
+  const offersObj = product.offers as unknown;
+  if (!offersObj) return null;
+  if (Array.isArray(offersObj)) {
+    return (
+      (offersObj as SupermarketOffer[]).find(
+        (o) =>
+          o &&
+          (o.supermarket === supermarketId ||
+            (o as unknown as { supermarketId?: SupermarketId }).supermarketId ===
+              supermarketId) &&
+          o.inStock,
+      ) ??
+      (offersObj as SupermarketOffer[]).find(
+        (o) =>
+          o &&
+          (o.supermarket === supermarketId ||
+            (o as unknown as { supermarketId?: SupermarketId }).supermarketId ===
+              supermarketId),
+      ) ??
+      null
+    );
+  }
+  return (
+    (offersObj as Record<SupermarketId, SupermarketOffer | null>)[
+      supermarketId
+    ] ?? null
+  );
+}
+
 function getProductItemWeight(
   product: ComparedProduct,
   preferredSupermarket?: SupermarketId | null,
 ): number {
   if (preferredSupermarket) {
-    const offer = product.offers[preferredSupermarket];
+    const offer = getProductOfferBySupermarket(product, preferredSupermarket);
     if (offer && offer.weightGrams > 0) return offer.weightGrams;
   }
   for (const s of SUPERMARKET_IDS) {
-    const offer = product.offers[s];
+    const offer = getProductOfferBySupermarket(product, s);
     if (offer && offer.weightGrams > 0) return offer.weightGrams;
   }
   return 100;
+}
+
+/**
+ * Calcula el precio medio en libras de un producto entre todas las ofertas disponibles.
+ */
+export function getAveragePriceGbp(product: ComparedProduct): number {
+  let sum = 0;
+  let count = 0;
+  for (const supermarket of SUPERMARKET_IDS) {
+    const offer = getProductOfferBySupermarket(product, supermarket);
+    if (!offer) continue;
+    const price = getEffectiveOfferPrice(offer);
+    if (price > 0) {
+      sum += price;
+      count += 1;
+    }
+  }
+  return count > 0 ? round2(sum / count) : 0;
 }
 
 /**
@@ -148,7 +218,7 @@ export function getCheapestOfferForProduct(product: ComparedProduct): {
   } | null = null;
 
   for (const supermarket of SUPERMARKET_IDS) {
-    const offer = product.offers[supermarket];
+    const offer = getProductOfferBySupermarket(product, supermarket);
     if (!offer) continue;
     const price = getEffectiveOfferPrice(offer);
     if (price <= 0) continue;
@@ -570,11 +640,92 @@ export const WEEKLY_RECIPES: WeeklyRecipe[] = [
 
 /**
  * Calcula las métricas nutricionales y de coste de una receta semanal.
+ * Admite modo 'single-supermarket' (por defecto) o 'max-savings'.
  */
 export function computeRecipeMetrics(
   recipe: WeeklyRecipe,
   catalogById: Map<string, ComparedProduct>,
+  options?: ComputeRecipeMetricsOptions,
 ): RecipeMetricsResult {
+  const mode: RecipeShoppingMode = options?.mode ?? "single-supermarket";
+  const preferredSupermarket = options?.preferredSupermarket ?? "auto";
+
+  const singleSupermarketCosts: Record<SupermarketId, number> = {
+    aldi: 0,
+    lidl: 0,
+    asda: 0,
+    morrisons: 0,
+  };
+  const inStockCounts: Record<SupermarketId, number> = {
+    aldi: 0,
+    lidl: 0,
+    asda: 0,
+    morrisons: 0,
+  };
+
+  // Calcular coste por supermercado individual (singleSupermarketCosts)
+  for (const sid of SUPERMARKET_IDS) {
+    let costForSid = 0;
+    for (const ing of recipe.ingredients) {
+      const product = catalogById.get(ing.productId) ?? null;
+      if (!product) continue;
+
+      const offer = getProductOfferBySupermarket(product, sid);
+      let unitPrice = 0;
+      if (offer) {
+        const p = getEffectiveOfferPrice(offer);
+        if (p > 0) {
+          unitPrice = p;
+          if (offer.inStock) {
+            inStockCounts[sid] += 1;
+          }
+        }
+      }
+      if (unitPrice === 0) {
+        const fallback = getCheapestOfferForProduct(product);
+        unitPrice = fallback ? fallback.unitPriceGbp : 0;
+      }
+      costForSid += unitPrice * ing.quantity;
+    }
+    singleSupermarketCosts[sid] = round2(costForSid);
+  }
+
+  // Determinar el supermercado individual óptimo (bestSingleSupermarket)
+  let bestSingleSupermarket: SupermarketId = SUPERMARKET_IDS[0];
+  let bestInStock = -1;
+  let lowestSingleCost = Number.POSITIVE_INFINITY;
+
+  for (const sid of SUPERMARKET_IDS) {
+    const stockCount = inStockCounts[sid];
+    const cost = singleSupermarketCosts[sid];
+    if (
+      stockCount > bestInStock ||
+      (stockCount === bestInStock && cost < lowestSingleCost)
+    ) {
+      bestSingleSupermarket = sid;
+      bestInStock = stockCount;
+      lowestSingleCost = cost;
+    }
+  }
+
+  // Coste mínimo mezclando supermercados (splitSupermarketCostGbp)
+  let splitCost = 0;
+  for (const ing of recipe.ingredients) {
+    const product = catalogById.get(ing.productId) ?? null;
+    const cheapest = product ? getCheapestOfferForProduct(product) : null;
+    const unitPrice = cheapest ? cheapest.unitPriceGbp : 0;
+    splitCost += unitPrice * ing.quantity;
+  }
+  const splitSupermarketCostGbp = round2(splitCost);
+
+  const targetSupermarket: SupermarketId =
+    preferredSupermarket !== "auto"
+      ? preferredSupermarket
+      : bestSingleSupermarket;
+
+  const recommendedSupermarket: SupermarketId | null =
+    mode === "max-savings" ? null : targetSupermarket;
+
   let totalCostGbp = 0;
   let totalCalories = 0;
   let totalProteinGrams = 0;
@@ -583,11 +734,40 @@ export function computeRecipeMetrics(
 
   for (const ing of recipe.ingredients) {
     const product = catalogById.get(ing.productId) ?? null;
-    const cheapest = product ? getCheapestOfferForProduct(product) : null;
-    const unitPriceGbp = cheapest ? cheapest.unitPriceGbp : 0;
+
+    let chosenOffer: {
+      supermarket: SupermarketId;
+      unitPriceGbp: number;
+      weightGrams: number;
+    } | null = null;
+
+    if (product) {
+      if (mode === "max-savings") {
+        chosenOffer = getCheapestOfferForProduct(product);
+      } else {
+        const offer = getProductOfferBySupermarket(product, targetSupermarket);
+        if (offer) {
+          const price = getEffectiveOfferPrice(offer);
+          if (price > 0) {
+            chosenOffer = {
+              supermarket: targetSupermarket,
+              unitPriceGbp: price,
+              weightGrams: offer.weightGrams > 0 ? offer.weightGrams : 100,
+            };
+          }
+        }
+        if (!chosenOffer) {
+          chosenOffer = getCheapestOfferForProduct(product);
+        }
+      }
+    }
+
+    const unitPriceGbp = chosenOffer ? chosenOffer.unitPriceGbp : 0;
     const lineTotalGbp = round2(unitPriceGbp * ing.quantity);
+    const resolvedSupermarket = chosenOffer ? chosenOffer.supermarket : null;
+
     const weightGrams = product
-      ? getProductItemWeight(product, cheapest?.supermarket)
+      ? getProductItemWeight(product, resolvedSupermarket)
       : 100;
     const totalGrams = weightGrams * ing.quantity;
 
@@ -605,7 +785,8 @@ export function computeRecipeMetrics(
     resolvedIngredients.push({
       ingredient: ing,
       product,
-      cheapestSupermarket: cheapest ? cheapest.supermarket : null,
+      cheapestSupermarket: resolvedSupermarket,
+      supermarketId: resolvedSupermarket,
       unitPriceGbp,
       lineTotalGbp,
       totalGrams,
@@ -617,6 +798,16 @@ export function computeRecipeMetrics(
   const servings = Math.max(recipe.servings, 1);
   const costTotal = round2(totalCostGbp);
 
+  const uniqueSupermarkets = new Set(
+    resolvedIngredients
+      .map((l) => l.supermarketId ?? l.cheapestSupermarket)
+      .filter((s): s is SupermarketId => Boolean(s)),
+  );
+  const uniqueSupermarketsCount = uniqueSupermarkets.size;
+  const maxSavingsDiffGbp = round2(
+    Math.max(0, costTotal - splitSupermarketCostGbp),
+  );
+
   return {
     recipeId: recipe.id,
     totalCostGbp: costTotal,
@@ -626,6 +817,12 @@ export function computeRecipeMetrics(
     totalProteinGrams: round2(totalProteinGrams),
     proteinPerServing: round2(totalProteinGrams / servings),
     resolvedIngredients,
+    mode,
+    recommendedSupermarket,
+    singleSupermarketCosts,
+    splitSupermarketCostGbp,
+    maxSavingsDiffGbp,
+    uniqueSupermarketsCount,
   };
 }
 
@@ -952,7 +1149,8 @@ export function buildBudgetRecommendation(
   budgetGbp: number,
   profile: BudgetProfileId,
   catalog: ComparedProduct[],
-  dailyCaloriesTargetTotal = 4200,
+  dailyCaloriesTargetTotal = 3800,
+  preferredSupermarket: SupermarketId | "auto" = "auto",
 ): BudgetRecommendationResult {
   const targetBudgetGbp = Math.max(round2(budgetGbp), 0);
 
@@ -965,6 +1163,10 @@ export function buildBudgetRecommendation(
       totalProteinGrams: 0,
       estimatedDaysCouple: 0,
       items: [],
+      mode: profile === "max-savings" ? "max-savings" : "single-supermarket",
+      recommendedSupermarket: null,
+      singleSupermarketTotals: { aldi: 0, lidl: 0, asda: 0, morrisons: 0 },
+      savingsVsAverageGbp: 0,
     };
   }
 
@@ -972,13 +1174,82 @@ export function buildBudgetRecommendation(
     catalog.map((p) => [p.id, p]),
   );
 
-  const profileConfigs = BUDGET_CONFIGS[profile] ?? BUDGET_CONFIGS["balanced-couple"];
+  const profileConfigs =
+    BUDGET_CONFIGS[profile] ?? BUDGET_CONFIGS["balanced-couple"];
 
-  // Indexamos las mejores ofertas disponibles para cada producto del perfil
+  // Calcular siempre singleSupermarketTotals para la plantilla base en cada uno de los 4 supermercados
+  const singleSupermarketTotals: Record<SupermarketId, number> = {
+    aldi: 0,
+    lidl: 0,
+    asda: 0,
+    morrisons: 0,
+  };
+  const sidInStockCounts: Record<SupermarketId, number> = {
+    aldi: 0,
+    lidl: 0,
+    asda: 0,
+    morrisons: 0,
+  };
+
+  for (const sid of SUPERMARKET_IDS) {
+    let sidTotal = 0;
+    for (const cfg of profileConfigs) {
+      const product = catalogMap.get(cfg.productId);
+      if (!product) continue;
+      const offer = getProductOfferBySupermarket(product, sid);
+      let price = 0;
+      if (offer) {
+        const p = getEffectiveOfferPrice(offer);
+        if (p > 0) {
+          price = p;
+          if (offer.inStock) {
+            sidInStockCounts[sid] += 1;
+          }
+        }
+      }
+      if (price === 0) {
+        const cheapest = getCheapestOfferForProduct(product);
+        price = cheapest ? cheapest.unitPriceGbp : 0;
+      }
+      sidTotal += price;
+    }
+    singleSupermarketTotals[sid] = round2(sidTotal);
+  }
+
+  // Determinar mejor supermercado único por disponibilidad y menor coste de plantilla base
+  let bestSingleSupermarket: SupermarketId = SUPERMARKET_IDS[0];
+  let bestInStockCount = -1;
+  let lowestTemplateCost = Number.POSITIVE_INFINITY;
+
+  for (const sid of SUPERMARKET_IDS) {
+    const stockCount = sidInStockCounts[sid];
+    const cost = singleSupermarketTotals[sid];
+    if (
+      stockCount > bestInStockCount ||
+      (stockCount === bestInStockCount && cost < lowestTemplateCost)
+    ) {
+      bestSingleSupermarket = sid;
+      bestInStockCount = stockCount;
+      lowestTemplateCost = cost;
+    }
+  }
+
+  const mode: RecipeShoppingMode =
+    profile === "max-savings" ? "max-savings" : "single-supermarket";
+
+  const targetSupermarket: SupermarketId =
+    preferredSupermarket !== "auto"
+      ? preferredSupermarket
+      : bestSingleSupermarket;
+
+  const recommendedSupermarket: SupermarketId | null =
+    mode === "max-savings" ? null : targetSupermarket;
+
+  // Indexamos las ofertas candidatas según el modo de compra
   const eligibleProducts: {
     config: ProfileItemConfig;
     product: ComparedProduct;
-    cheapest: {
+    chosenOffer: {
       supermarket: SupermarketId;
       unitPriceGbp: number;
       weightGrams: number;
@@ -988,9 +1259,38 @@ export function buildBudgetRecommendation(
   for (const cfg of profileConfigs) {
     const product = catalogMap.get(cfg.productId);
     if (!product) continue;
-    const cheapest = getCheapestOfferForProduct(product);
-    if (!cheapest || cheapest.unitPriceGbp <= 0) continue;
-    eligibleProducts.push({ config: cfg, product, cheapest });
+
+    let offerToUse: {
+      supermarket: SupermarketId;
+      unitPriceGbp: number;
+      weightGrams: number;
+    } | null = null;
+
+    if (mode === "max-savings") {
+      offerToUse = getCheapestOfferForProduct(product);
+    } else {
+      const offer = getProductOfferBySupermarket(product, targetSupermarket);
+      if (offer) {
+        const price = getEffectiveOfferPrice(offer);
+        if (price > 0) {
+          offerToUse = {
+            supermarket: targetSupermarket,
+            unitPriceGbp: price,
+            weightGrams: offer.weightGrams > 0 ? offer.weightGrams : 100,
+          };
+        }
+      }
+      if (!offerToUse) {
+        offerToUse = getCheapestOfferForProduct(product);
+      }
+    }
+
+    if (!offerToUse || offerToUse.unitPriceGbp <= 0) continue;
+    eligibleProducts.push({
+      config: cfg,
+      product,
+      chosenOffer: offerToUse,
+    });
   }
 
   let remaining = targetBudgetGbp;
@@ -998,7 +1298,7 @@ export function buildBudgetRecommendation(
 
   // Fase 1: Añadir 1 unidad de cada producto que quepa en el presupuesto restante
   for (const item of eligibleProducts) {
-    const price = item.cheapest.unitPriceGbp;
+    const price = item.chosenOffer.unitPriceGbp;
     if (price <= remaining) {
       quantities.set(item.config.productId, 1);
       remaining = round2(remaining - price);
@@ -1020,7 +1320,7 @@ export function buildBudgetRecommendation(
       const effectiveMaxQty = Math.ceil(item.config.maxQty * budgetMultiplier);
       if (currentQty >= effectiveMaxQty) continue;
 
-      const price = item.cheapest.unitPriceGbp;
+      const price = item.chosenOffer.unitPriceGbp;
       if (price <= remaining) {
         quantities.set(pid, currentQty + 1);
         remaining = round2(remaining - price);
@@ -1038,14 +1338,14 @@ export function buildBudgetRecommendation(
     const qty = quantities.get(pid) ?? 0;
     if (qty <= 0) continue;
 
-    const unitPriceGbp = item.cheapest.unitPriceGbp;
+    const unitPriceGbp = item.chosenOffer.unitPriceGbp;
     const lineTotalGbp = round2(unitPriceGbp * qty);
     totalCostGbp = round2(totalCostGbp + lineTotalGbp);
 
     items.push({
       product: item.product,
       quantity: qty,
-      cheapestSupermarket: item.cheapest.supermarket,
+      cheapestSupermarket: item.chosenOffer.supermarket,
       unitPriceGbp,
       lineTotalGbp,
       reason: item.config.reason,
@@ -1055,7 +1355,11 @@ export function buildBudgetRecommendation(
   // Salvaguarda: si por algún redondeo marginal totalCostGbp > targetBudgetGbp,
   // recortamos del último producto con qty > 1
   if (totalCostGbp > targetBudgetGbp) {
-    for (let i = items.length - 1; i >= 0 && totalCostGbp > targetBudgetGbp; i--) {
+    for (
+      let i = items.length - 1;
+      i >= 0 && totalCostGbp > targetBudgetGbp;
+      i--
+    ) {
       const it = items[i];
       if (it.quantity > 1) {
         it.quantity -= 1;
@@ -1069,21 +1373,32 @@ export function buildBudgetRecommendation(
 
   const remainingBudgetGbp = round2(targetBudgetGbp - totalCostGbp);
 
-  // Calcular calorías, proteínas y días estimados para la pareja
+  // Calcular calorías, proteínas, días estimados y ahorro frente al precio medio
   let totalCalories = 0;
   let totalProteinGrams = 0;
+  let totalAverageCostGbp = 0;
 
   for (const it of items) {
-    const weightGrams = getProductItemWeight(it.product, it.cheapestSupermarket);
+    const weightGrams = getProductItemWeight(
+      it.product,
+      it.cheapestSupermarket,
+    );
     const totalGrams = weightGrams * it.quantity;
     totalCalories += (totalGrams * it.product.nutrition.caloriesPer100g) / 100;
     totalProteinGrams += (totalGrams * it.product.nutrition.proteinPer100g) / 100;
+
+    const avgPrice = getAveragePriceGbp(it.product);
+    const effectiveAvgPrice = avgPrice > 0 ? avgPrice : it.unitPriceGbp;
+    totalAverageCostGbp += effectiveAvgPrice * it.quantity;
   }
 
   const totalCaloriesInt = Math.round(totalCalories);
   const totalProteinInt = round2(totalProteinGrams);
   const safeDailyTarget = Math.max(dailyCaloriesTargetTotal, 1);
   const estimatedDaysCouple = round2(totalCaloriesInt / safeDailyTarget);
+  const savingsVsAverageGbp = round2(
+    Math.max(0, totalAverageCostGbp - totalCostGbp),
+  );
 
   return {
     targetBudgetGbp,
@@ -1093,5 +1408,9 @@ export function buildBudgetRecommendation(
     totalProteinGrams: totalProteinInt,
     estimatedDaysCouple,
     items,
+    mode,
+    recommendedSupermarket,
+    singleSupermarketTotals,
+    savingsVsAverageGbp,
   };
 }

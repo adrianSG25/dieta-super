@@ -104,17 +104,33 @@ export default function HomePage() {
   );
 
   const addProduct = useCallback(
-    (product: ComparedProduct, quantity = 1) => {
+    (product: ComparedProduct, quantity = 1, preferredSupermarket?: SupermarketId) => {
       const by = roleRef.current;
       const qtyToAdd = Math.max(1, quantity);
       updateList((l) => {
         const existing = l.find((i) => i.productId === product.id && i.addedBy === by && !i.checked);
         if (existing) {
-          return l.map((i) => (i.id === existing.id ? { ...i, quantity: i.quantity + qtyToAdd } : i));
+          return l.map((i) =>
+            i.id === existing.id
+              ? {
+                  ...i,
+                  quantity: i.quantity + qtyToAdd,
+                  preferredSupermarket: preferredSupermarket ?? existing.preferredSupermarket,
+                }
+              : i,
+          );
         }
         return [
           ...l,
-          { id: newId(), productId: product.id, product, quantity: qtyToAdd, addedBy: by, checked: false },
+          {
+            id: newId(),
+            productId: product.id,
+            product,
+            quantity: qtyToAdd,
+            addedBy: by,
+            checked: false,
+            preferredSupermarket,
+          },
         ];
       });
     },
@@ -122,13 +138,13 @@ export default function HomePage() {
   );
 
   const addProductsBatch = useCallback(
-    (entries: { product: ComparedProduct; quantity: number }[]) => {
+    (entries: { product: ComparedProduct; quantity: number; preferredSupermarket?: SupermarketId }[]) => {
       if (!entries.length) return;
       const by = roleRef.current;
       updateList((l) => {
         const next = [...l];
         for (const entry of entries) {
-          const { product, quantity } = entry;
+          const { product, quantity, preferredSupermarket } = entry;
           if (quantity <= 0) continue;
           const existingIndex = next.findIndex(
             (i) => i.productId === product.id && i.addedBy === by && !i.checked,
@@ -138,6 +154,7 @@ export default function HomePage() {
             next[existingIndex] = {
               ...existing,
               quantity: existing.quantity + quantity,
+              preferredSupermarket: preferredSupermarket ?? existing.preferredSupermarket,
             };
           } else {
             next.push({
@@ -147,6 +164,7 @@ export default function HomePage() {
               quantity,
               addedBy: by,
               checked: false,
+              preferredSupermarket,
             });
           }
         }
