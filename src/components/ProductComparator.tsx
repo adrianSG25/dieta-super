@@ -49,6 +49,8 @@ function proteinPerPound(p: ComparedProduct): number {
   return grams / Math.max(effectivePrice(o), 0.01);
 }
 
+const PAGE_SIZE = 36;
+
 export default function ProductComparator({
   activeRole,
   activeName,
@@ -60,12 +62,17 @@ export default function ProductComparator({
   const [category, setCategory] = useState("");
   const [live, setLive] = useState(false);
   const [sort, setSort] = useState<SortMode>("price");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [products, setProducts] = useState<ComparedProduct[]>(
     initialProducts.length ? initialProducts : getDefaultCatalog(),
   );
-  const [categories, setCategories] = useState<string[]>(getCategories());
+  const [categories] = useState<string[]>(getCategories());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [query, category, sort]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +116,12 @@ export default function ProductComparator({
     });
     return list;
   }, [products, sort]);
+
+  const visibleProducts = useMemo(
+    () => sorted.slice(0, visibleCount),
+    [sorted, visibleCount],
+  );
+  const hasMore = visibleCount < sorted.length;
 
   return (
     <section className="space-y-3" aria-label="Comparador de productos">
@@ -167,6 +180,7 @@ export default function ProductComparator({
       <div className="flex items-center justify-between px-1 text-xs text-slate-500">
         <span>
           {sorted.length} producto{sorted.length === 1 ? "" : "s"}
+          {sorted.length > visibleProducts.length && ` · mostrando ${visibleProducts.length}`}
         </span>
         {loading && (
           <span className="flex items-center gap-1">
@@ -186,7 +200,7 @@ export default function ProductComparator({
       )}
 
       <ul className="grid gap-3 md:grid-cols-2">
-        {sorted.map((p) => (
+        {visibleProducts.map((p) => (
           <ProductCard
             key={p.id}
             product={p}
@@ -197,6 +211,25 @@ export default function ProductComparator({
           />
         ))}
       </ul>
+
+      {hasMore && (
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 active:scale-95"
+          >
+            Mostrar {Math.min(PAGE_SIZE, sorted.length - visibleProducts.length)} más
+          </button>
+          <button
+            type="button"
+            onClick={() => setVisibleCount(sorted.length)}
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 active:scale-95"
+          >
+            Ver los {sorted.length} productos
+          </button>
+        </div>
+      )}
     </section>
   );
 }
