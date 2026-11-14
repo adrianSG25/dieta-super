@@ -93,3 +93,100 @@ export function makeSeedProduct(input: CompactSeedProductInput): ComparedProduct
     },
   };
 }
+
+const BRAND_PREFIXES: string[] = [
+  "Just Essentials by ASDA",
+  "Just Essentials",
+  "ASDA Extra Special",
+  "Morrisons Savers",
+  "Morrisons The Best",
+  "ASDA",
+  "Morrisons",
+  "Ashfield Farm",
+  "Birchwood",
+  "Nature's Pick",
+  "Oaklands",
+  "Everyday Essentials",
+  "Crownfield",
+  "Brooklea",
+  "Milbona",
+  "Merevale",
+  "Warren & Sons",
+  "Specially Selected",
+  "Deluxe",
+  "The Best",
+  "Savers",
+  "Vemondo",
+  "Acti Leaf",
+  "Baresa",
+  "Newgate",
+  "Cucina",
+  "Village Bakery",
+  "Rowan Hill",
+  "Alcafe",
+  "Bellarom",
+  "Foodie Market",
+  "Four Seasons",
+  "Freshona",
+  "Ocean Trader",
+  "The Fishmonger",
+  "Cowbelle",
+  "Emporium",
+  "Worldwide Foods",
+  "World Foods",
+  "Woodgate",
+  "Snackrite",
+  "Oakhurst",
+  "Broadfields",
+  "Bramwells",
+  "Harvest Morn",
+  "Belbake",
+  "Meadow Fresh",
+  "Valley Spire",
+  "Solesta",
+  "Kania",
+  "Pilos",
+  "British",
+  "Scottish",
+  "Fairtrade",
+  "Succulent",
+  "Tender",
+];
+
+const SORTED_BRAND_PREFIXES = [...BRAND_PREFIXES].sort(
+  (a, b) => b.length - a.length,
+);
+
+export function getEnglishProductName(product: ComparedProduct): string {
+  const raw =
+    product.offers.asda?.productName ||
+    product.offers.morrisons?.productName ||
+    product.offers.aldi?.productName ||
+    product.offers.lidl?.productName ||
+    "";
+
+  const originalTrimmed = raw.trim();
+  if (!originalTrimmed) return "";
+
+  let cleaned = originalTrimmed;
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const prefix of SORTED_BRAND_PREFIXES) {
+      const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(`^${escaped}\\b`, "i");
+      if (regex.test(cleaned)) {
+        const after = cleaned.replace(regex, "").trim();
+        const withoutPunct = after.replace(/^[-–—:,.\s]+/, "").trim();
+        if (withoutPunct.length > 0) {
+          cleaned = withoutPunct;
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return cleaned || originalTrimmed;
+}

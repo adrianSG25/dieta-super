@@ -108,4 +108,5 @@ export async function searchComparedProducts(
   return seedMatches;
 }
 
+export { getEnglishProductName } from "./seed-helpers";
 export { searchOpenFoodFactsUK };

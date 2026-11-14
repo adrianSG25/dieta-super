@@ -10,6 +10,7 @@ import {
   type ShoppingListItem,
   type SupermarketId,
 } from "@/types/dietasuper";
+import { getEnglishProductName } from "@/lib/supermarkets";
 import { SUPERMARKET_META, SupermarketBadge, formatGbp } from "./SupermarketBadge";
 
 export interface SharedShoppingListProps {
@@ -84,6 +85,11 @@ export default function SharedShoppingList({
                 {roleName(item.addedBy, goals)}
               </span>
             </div>
+            <p className="mt-0.5 text-xs font-medium text-indigo-700">
+              🇬🇧 {a && item.product.offers[a.supermarket]?.productName
+                ? item.product.offers[a.supermarket]!.productName
+                : getEnglishProductName(item.product)}
+            </p>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               {a ? (
                 <>

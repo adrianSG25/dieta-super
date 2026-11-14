@@ -12,6 +12,7 @@ import {
 import {
   getCategories,
   getDefaultCatalog,
+  getEnglishProductName,
   searchComparedProducts,
 } from "@/lib/supermarkets";
 import { SupermarketBadge, formatGbp } from "./SupermarketBadge";
@@ -256,6 +257,9 @@ function ProductCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold leading-snug text-slate-900">{product.canonicalName}</h3>
+          <p className="mt-0.5 text-xs font-medium text-indigo-700">
+            🇬🇧 {getEnglishProductName(product)}
+          </p>
           <p className="mt-0.5 text-xs text-slate-500">{product.category}</p>
         </div>
         <div className="shrink-0 text-right text-xs">
@@ -275,12 +279,22 @@ function ProductCard({
                 key={id}
                 className={`border-t border-slate-100 first:border-t-0 ${isBest ? "bg-emerald-50" : ""}`}
               >
-                <td className="py-1.5 pl-1.5 pr-2">
-                  <SupermarketBadge id={id} size="xs" />
+                <td className="align-top py-1.5 pl-1.5 pr-2">
+                  <div className="flex flex-col">
+                    <SupermarketBadge id={id} size="xs" />
+                    {o && (
+                      <p
+                        className="mt-0.5 max-w-[165px] truncate text-[11px] text-slate-500 sm:max-w-[230px]"
+                        title={o.productName}
+                      >
+                        {o.productName}
+                      </p>
+                    )}
+                  </div>
                 </td>
                 {o ? (
                   <>
-                    <td className="py-1.5 text-right">
+                    <td className="align-top py-1.5 text-right">
                       {o.promoPriceGbp != null ? (
                         <span>
                           <span
@@ -297,7 +311,7 @@ function ProductCard({
                       )}
                       {!o.inStock && <span className="ml-1 text-red-500">sin stock</span>}
                     </td>
-                    <td className="py-1.5 pl-2 pr-1.5 text-right text-slate-500">
+                    <td className="align-top py-1.5 pl-2 pr-1.5 text-right text-slate-500">
                       {o.pricePerKgOrLitreGbp != null
                         ? `${formatGbp(o.pricePerKgOrLitreGbp)}/kg`
                         : o.unitPriceText}
@@ -305,7 +319,7 @@ function ProductCard({
                     </td>
                   </>
                 ) : (
-                  <td colSpan={2} className="py-1.5 pr-1.5 text-right text-slate-400">
+                  <td colSpan={2} className="align-top py-1.5 pr-1.5 text-right text-slate-400">
                     No disponible
                   </td>
                 )}
